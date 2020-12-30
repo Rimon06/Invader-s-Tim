@@ -1,114 +1,190 @@
 import pygame
 import media
+from character import Character
+from data_structure import dict_grid
 
 
+# Probablemente abstraer una clase padre, como la clase Table del modulo GUI
 class casilla():
-    def __init__(self, esx, esy, width, height, player=None):
+    '''
+Class casilla saves the character in the position Px, Py in the Grid
+He may save the tile inside him
+Attributes:
+rect -> pygame.Rect object
+MapX, MapY  -> coord reference/pos character
+player -> character here
+peso -> peso to referencing other object
+    '''
+
+    def __init__(self, esx, esy, width, height, x=0, y=0, player=None):
         self.rect = pygame.Rect(esx, esy, width, height)
-        self.player = player
-        self.peso = 10 if self.player is not None else 0
+        self.MapX = x
+        self.MapY = y
+        self.agregar(player)
 
-    # Coloca a player en la casilla actual, y a la anterior le pone cero
-    def agregar(self, player, casilla=None):
-        if player is not None and self.peso < 10:
+# === Metodos para establecer al player en casilla === #
+    def agregar(self, player):
+        '''Place a character in this casilla'''
+        if player is not None:
             self.player = player
-            self.peso = 10
-            if casilla is not None:
-                casilla.player = None
-                casilla.peso = 0
+            self.set_peso()
+            player.set_pos(self.coords())
+            self.middle()
+        else:
+            self.blank()
 
+    def blank(self):
+        '''Set casilla with no character'''
+        self.player = None
+        self.set_peso()
+
+    def middle(self):
+        '''Center character's rect in middle of casilla'''
+        self.player.rect.midbottom = self.rect.center
+
+    def set_peso(self):
+        if self.have_character():
+            self.peso = 10
+        else:
+            self.peso = 0
+
+# ===    Metodos para mover    === #
+    def move_from(self, previous):
+        '''moves a character in this casilla from previous casilla'''
+        assert type(previous) == casilla, media.ERROR_T['casilla']
+        if not self:
+            self.agregar(self.player)
+            previous.blank()
+
+    def move_to(self, next):
+        next.move_from(self)
+
+    def swap(self, other):
+        assert type(other) == casilla, media.ERROR_T['casilla']
+        p1 = self.player
+        p2 = other.player
+        self.agregar(p2)
+        other.agregar(p1)
+
+# === Metodos logicos === #
+    def is_filled(self):
+        return self.player is not None
+
+    def __bool__(self):
+        return self.is_filled()
+
+    def have_character(self):
+        return isinstance(self.player, Character)
+
+# ===   Metodos de Embellecimiento   == #
     def highlight(self):
         return (0, 255, 0)
 
-    def show_data(self, screen, dim):
+    def setbackground(self, color):
+        assert type(color) == tuple and len(color) in (3, 4), media.ERROR_T['color']
+        self.color = color
+
+# ===  Metodos de Retorno   === #
+    def show_data(self):
         '''Mover a GUI'''
-        pygame.draw.rect(screen, (0, 255, 125), dim)
-        media.put_string(self.player.name, screen, (dim[0]+5, dim[1]+5))
+        self.info = f'Posicion: ({self.MapX},{self.MapY})'
+        if self:  # Have an GameEntity
+            self.info += f'\nName: {self.player.name}'
+            if self.have_character():  # Have a Character
+                self.info += f'''\nLife: {self.player.life}'''
+        return self.info
+
+    def __repr__(self):
+        return self.show_data()+f' {self.rect}'
+
+    def sum_rect(self, other):
+        '''return a Rect Object that is create by union of Rect of two casillas'''
+        RECT = self.rect.union(other.rect)
+        return RECT
+
+    def coords(self):
+        return (self.MapX, self.MapY)
 
 
-class grid():  # Agregarle la lista de tiles para las imagenes...
+class grid(dict_grid):  # Agregarle la lista de tiles para las imagenes...
     def __init__(self, esx, esy, width, height, num):
-
+        # Atributos heredados: W, H, index, info attributes
+        super(grid, self).__init__(num)
         self.x, self.y = esx, esy  # Esquina superior izquierda del tablero
 
         self.width, self.height = width, height  # Dimensiones de una sola casilla
 
         self.num = num  # numero de casillas en una fila/columna del tablero
-        self.mapa = dict()
         # Genera el grid de num filas x num columnas y los guarda en un diccionario que lee las casillas i con j
-        for y in range(0, self.height*self.num, self.height):
-            for x in range(0, self.width*self.num, self.width):
-                i = x//self.width
-                j = y//self.height
-                self.mapa[i, j] = casilla(self.x+x, self.y+y, self.width, self.height)
-        # rect() del tablero completo
-        self.inside_grid = (self.mapa[0, 0].rect).union(self.mapa[self.num-1, self.num-1].rect)
+        for i, j in self:
+            self[i, j] = casilla(self.x+i*self.width,
+                                 self.y+j*self.height,
+                                 self.width, self.height,
+                                 i, j)
+        self.rect_table = self[0, 0].sum_rect(self[self.H-1, self.W-1])
 
     # Dibuja el tablero con una grilla de color negro
     def draw(self, screen):
         # dibuja el fondo del tablero
-        pygame.draw.rect(screen, (255, 255, 255), self.inside_grid)
+        pygame.draw.rect(screen, (255, 255, 255), self.rect_table)
         # dibuja la grilla del tablero, separando cada casilla
-        for cuadro in self.mapa.values():
+        for cuadro in self.values():
             pygame.draw.rect(screen, (0, 0, 0), cuadro.rect, 1)
+
         # Probablemente mover a GUI.py
         highlighted = self.CHECK_mouse()
         if highlighted is not None:
-            box = self.mapa[highlighted]
+            box = self[highlighted]
             pygame.draw.rect(screen, box.highlight(), box.rect, 1)
-            if box.peso == 10 and pygame.mouse.get_pressed()[0]:
-                dim = (self.inside_grid.right+20, self.inside_grid.top, 100, self.inside_grid.height)
-                box.show_data(screen, dim)
+
         # Dibuja los jugadores en la casilla, si los hay
-        for j in range(0, self.num):
-            for i in range(0, self.num):
-                player = self.mapa[i, j].player
-                if player is not None:
-                    self.putinmiddle(player, (i, j))
-                    self.mapa[i, j].player.pos(screen)
+        for j in range(self.W):
+            for i in range(self.H):
+                player = self[i, j].player
+                if self[i, j]:  # Have an player (player is not None)
+                    # self.putinmiddle(player, (i, j))
+                    self[i, j].middle()
+                    player.draw(screen)
 
     def moving_rects(self):
         '''Mueve todos los rects de las casillas '''
-        dx = self.inside_grid.left - self.mapa[0, 0].rect.left
-        dy = self.inside_grid.top - self.mapa[0, 0].rect.top
-        for casilla in self.mapa.values():
-            casilla.rect.move_ip(dx, dy)
+        dx = self.rect_table.left - self[0, 0].rect.left
+        dy = self.rect_table.top - self[0, 0].rect.top
+        for casilla in self.values():
+            casilla.rect.move_ip(dx, dy)  # Metodo para mover el rect Y centrar el personaje
 
     def CHECK_mouse(self):
         '''Mover esto a las cosas que detectará el GUI'''
         posMouse = pygame.mouse.get_pos()
-        for casilla in self.mapa:
-            if self.mapa[casilla].rect.collidepoint(posMouse):
+        for casilla in self:
+            if self[casilla].rect.collidepoint(posMouse):
                 return casilla
         return None
 
-    # Establece la posición del personaje en una de las casillas
-    def putinmiddle(self, player, pos):
-        player.rect.midbottom = self.mapa[pos].rect.center
-        self.mapa[pos].agregar(player)
+    # Mejorar las funciones de colocar y mover un personaje en una casilla.
+    # Hacer más sencilla la función agregar de la clase casilla, para utilizar un método en esta clase
+    # que implemente de mejor manera el intercambio
 
-    def movingchar(self, player, pos):
-        moveX, moveY = pos[0], pos[1]
-        if moveX != 0:
-            moveX //= abs(moveX)
-        if moveY != 0:
-            moveY //= abs(moveY)
-        # Movimiento del jugador. Si se sale del tablero, dibujar
-        prevx = player.Px, player.Py
-        i = player.Px + moveX
-        j = player.Py + moveY
-        if i < 0 or i > self.num-1 or j < 0 or j > self.num-1 or (i == player.Px and j == player.Py):
-            return False
-        # Mueve el jugador de un espacio a otro
-        # Probablemente cambiar por algo mas sencillo
-        if self.mapa[i, j].peso < 10:
-            self.mapa[i, j].agregar(player, self.mapa[player.Px, player.Py])
-            player.Px, player.Py = i, j
+    def includ(self, player, pos):
+        self[pos].agregar(player)
 
-        self.putinmiddle(player, (player.Px, player.Py))
-        if prevx == (player.Px, player.Py):
-            return False
-        else:
-            return True
+    def swap(self, pos1, pos2):
+        cas1 = self[pos1]
+        cas2 = self[pos2]
+        cas1.swap(cas2)
 
-        # def possiblemoves(self, )
+    def Can_you_move(self, playerpos, next):
+        vecino = self.neighbours(playerpos)
+        valid_casilla = next in vecino and next is not None
+        return valid_casilla and not self[next].is_filled()
+
+    def neighbours(self, pos):
+        i, j = pos
+        moves = [(i+1, j), (i-1, j), (i, j-1), (i, j+1)]  # derecha, izquierda, arriba, abajo
+        vecino = []
+        for x, y in moves:
+            if x < 0 or x > self.H-1 or y < 0 or y > self.W-1:
+                vecino.append(None)
+            else:
+                vecino.append((x, y))
+        return vecino

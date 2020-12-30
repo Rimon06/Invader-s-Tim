@@ -2,9 +2,9 @@ import pygame
 import scene
 import character
 import media
-import cards
 import random
 import Manage
+import cards
 import GUI
 # import math
 # from pygame import math as PyM
@@ -46,18 +46,18 @@ class TitleScene(Manage.Scene):
         mouse = pygame.mouse.get_pos()
         press = pygame.mouse.get_pressed()[0]
         if self.box1.collidepoint(mouse) and press:
-            self.manager.go_to(init())
+            self.manager.go_to(InitScene("Tim Invaded The Moon"))
         elif self.box2.collidepoint(mouse) and press:
             self.manager.go_to(ByeScene())
 
 
 #  --Init Scene--
-class init(Manage.Scene):
-    def __init__(self):
-        super(init, self).__init__()
+class InitScene(Manage.Scene):
+    def __init__(self, message):
+        super(InitScene, self).__init__()
         self.FONT = pygame.font.Font(None, 46)
-        self.text = self.FONT.render("Tim Invaded The Moon", 1, (240, 230, 180))
-        self.background, self.RECT = media.load_png("background.png")
+        self.text = self.FONT.render(message, 1, (240, 230, 180))
+        self.background, _ = media.load_png("background.png")
         self.alpha = 0
         self.pos = self.text.get_rect()
         self.pos.center = screen.get_rect().center
@@ -70,7 +70,7 @@ class init(Manage.Scene):
         screen.blit(self.text, self.pos)
 
     def update(self):
-        if self.alpha < 256:
+        if self.alpha < 255:
             self.alpha += 1
 
     def handle_events(self, events):
@@ -95,43 +95,62 @@ class ByeScene(Manage.Scene):
 class GameScene(Manage.Scene):
     def __init__(self):
         super(GameScene, self).__init__()
-        self.score = 0
-        self.grid = scene.grid(50, 50, 32, 32, 8)
-        self.velita = character.player(self.grid)  # Jugador Principal
+        # Scenario
+        self.scenario = scene.grid(50, 50, 32, 32, 8)
+        character.GameEntity.scenario = self.scenario
+        # playable character
+        self.velita = character.Player()  # Jugador Principal
+        # non-playable character
         self.ghosts = []
         for x in range(5):
-            self.ghosts.append(character.Enemy(self.grid))
-        self.players = self.ghosts[:]
+            self.ghosts.append(character.Enemy())
+        # Turns-playable character
+        self.players = []  # self.ghosts[:]
         self.players.append(self.velita)
-        # self.cartica = cards.deck(21)
+        # interface
         self.font = pygame.font.Font(None, 20)
-        self.GUI = GUI.pantalla(self.velita, screen, self.grid)
+        self.GUI = GUI.pantalla(self.velita, screen, self.scenario)
+        # building deck
+        self.velita.deck = cards.Deck(self.velita, 10, self.GUI)
         random.shuffle(self.players)
-        self.turns = Manage.TurnManager(self.players, self.grid)
-
+        # Turn manager
+        self.turns = Manage.TurnManager(self.players, self.scenario)
         self.alpha = 0
+        self.cards = []
+        self.velita.moon_points = 0
 
     def handle_events(self, events):
         for e in events:
             if e.type == pygame.KEYDOWN:
-                if self.turns.ActionTurn()(e.key, self.grid):
-                    self.turns.NextTurn(1)
-                    pygame.time.delay(50)
-                # if e.key == pygame.K_v:
-                #     self.cartica.shuffle()
-                # if e.key == pygame.K_c:
-                #     self.cartica.take_card()
-                # if e.key == pygame.K_x:
-                #     self.cartica.put_to_show()
+                if e.key == pygame.K_v:
+                    self.cards.append(character.Card())
+                if e.key == pygame.K_c:
+                    self.velita.deck.take_card()
+                if e.key == pygame.K_x:
+                    self.velita.deck.put_in_hand()
                 if e.key == pygame.K_p:
                     pygame.image.save(screen, "screenshot.png")
                 if e.key == pygame.K_SPACE:
                     self.manager.go_to(TitleScene())
+                if e.key == pygame.K_g:  # Cambiar
+                    self.GUI.show = not self.GUI.show
+                if e.key == pygame.K_h:
+                    self.manager.go_to(EndingScene())
 
     def update(self):
         # mouse_pressed = pygame.mouse.get_pressed()
         self.text = self.font.render(
-            f'''PosX: {self.velita.Px}, PosY: {self.velita.Py} ~~ {self.grid.CHECK_mouse()}''', 1, (250, 250, 25))
+            f'''PosX: {self.velita.Px}, PosY: {self.velita.Py} ~~ {self.scenario.CHECK_mouse()}''',
+            1, (250, 250, 25))
+        if self.velita.deck.using_card():
+            self.turns.round += 1
+            self.cards.append(character.Card())
+        for enemy in self.ghosts:
+            if enemy.life <= 0:
+                enemy.respawn()
+        if self.velita.moon_points == 5:
+            self.manager.go_to(EndingScene())
+
         # -aquí pondre la cuestión de los turnos
 
     def render(self, screen):
@@ -139,9 +158,25 @@ class GameScene(Manage.Scene):
         screen.blit(self.text, (5, 480))
         media.put_string(f'{self.turns.round}', screen, (0, 0))
         self.GUI.draw_things()
-
-        # self.cartica.show(screen, self.grid.inside_grid.bottomleft)
         pygame.display.update()
+
+
+#  --Winning Scene--
+class EndingScene(InitScene):
+    def __init__(self):
+        super(EndingScene, self).__init__("YOU WON")
+        self.counter = 0
+
+    def render(self, screen):
+        self.background.set_alpha(self.alpha)
+        self.text.set_alpha(self.alpha)
+        screen.blit(self.background, (0, 0))
+        screen.blit(self.text, self.pos)
+
+    def handle_events(self, events):
+        for e in events:
+            if e.type == pygame.KEYDOWN and e.key == pygame.K_SPACE and self.alpha >= 255:
+                self.manager.go_to(ByeScene())
 
 
 running = True

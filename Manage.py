@@ -1,5 +1,5 @@
 # import pygame
-from character import player
+# from character import Player
 
 
 class SceneManager(object):
